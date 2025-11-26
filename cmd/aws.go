@@ -7,18 +7,21 @@ import (
 	"strings"
 
 	"github.com/ahmedfawzy/devops-toolkit/pkg/aws"
+	"github.com/ahmedfawzy/devops-toolkit/pkg/notify"
 	"github.com/ahmedfawzy/devops-toolkit/pkg/reporter"
 	"github.com/spf13/cobra"
 )
 
 var (
-	awsRegions    string
-	outputFormat  string
-	includeEC2    bool
-	includeEBS    bool
-	includeSnaps  bool
-	includeEIPs   bool
-	includeRDS    bool
+	awsRegions     string
+	outputFormat   string
+	includeEC2     bool
+	includeEBS     bool
+	includeSnaps   bool
+	includeEIPs    bool
+	includeRDS     bool
+	slackWebhook   string
+	alertThreshold float64
 )
 
 var awsCmd = &cobra.Command{
@@ -55,6 +58,8 @@ func init() {
 	awsAuditCmd.Flags().BoolVar(&includeSnaps, "snapshots", true, "Include snapshot analysis")
 	awsAuditCmd.Flags().BoolVar(&includeEIPs, "eips", true, "Include Elastic IP analysis")
 	awsAuditCmd.Flags().BoolVar(&includeRDS, "rds", true, "Include RDS instance analysis")
+	awsAuditCmd.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Slack webhook URL for sending alerts")
+	awsAuditCmd.Flags().Float64Var(&alertThreshold, "alert-threshold", 0, "Minimum savings threshold to trigger Slack alert (default 0)")
 }
 
 func runAWSAudit(cmd *cobra.Command, args []string) error {
@@ -153,6 +158,27 @@ func runAWSAudit(cmd *cobra.Command, args []string) error {
 	rep := reporter.NewReporter(outputFormat)
 	if err := rep.RenderAuditResults(allResults); err != nil {
 		return fmt.Errorf("failed to render results: %w", err)
+	}
+
+	// Send Slack alert if configured and threshold met
+	if slackWebhook != "" && allResults.TotalPotentialSavings > alertThreshold {
+		fmt.Println("\n📢 Sending Slack alert...")
+
+		notifier := notify.NewSlackNotifier(slackWebhook)
+
+		// Build alert message
+		message := fmt.Sprintf("AWS audit completed for regions: %s", strings.Join(regions, ", "))
+
+		err := notifier.SendAlert(message, *allResults)
+		if err != nil {
+			fmt.Printf("⚠️  Warning: Failed to send Slack alert: %v\n", err)
+			// Don't fail the whole command if Slack alert fails
+		} else {
+			fmt.Println("✅ Slack alert sent successfully!")
+		}
+	} else if slackWebhook != "" {
+		fmt.Printf("\nℹ️  Slack webhook configured but savings ($%.2f) below threshold ($%.2f) - no alert sent\n",
+			allResults.TotalPotentialSavings, alertThreshold)
 	}
 
 	return nil

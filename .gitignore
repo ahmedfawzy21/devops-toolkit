@@ -1,0 +1,17 @@
+# Binaries
+bin/
+dtk
+*.exe
+
+# IDE/Editor
+.claude/
+.vscode/
+.idea/
+
+# Archives
+*.tar.gz
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
