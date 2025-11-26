@@ -61,10 +61,28 @@ Example:
 	RunE: runK8sCerts,
 }
 
+var k8sPDBCmd = &cobra.Command{
+	Use:   "pdb",
+	Short: "Check PodDisruptionBudget status",
+	Long: `Check PodDisruptionBudget (PDB) health across your Kubernetes cluster:
+
+- Identify PDBs with zero disruptions allowed
+- Detect misconfigured PDBs with no matching pods
+- Find PDBs with unhealthy pods
+- Color-coded output: red (critical), yellow (at-risk), green (healthy)
+
+Example:
+  dtk k8s pdb
+  dtk k8s pdb --namespace production
+  dtk k8s pdb --slack-webhook https://hooks.slack.com/xxx`,
+	RunE: runK8sPDB,
+}
+
 func init() {
 	rootCmd.AddCommand(k8sCmd)
 	k8sCmd.AddCommand(k8sHealthCmd)
 	k8sCmd.AddCommand(k8sCertsCmd)
+	k8sCmd.AddCommand(k8sPDBCmd)
 
 	k8sHealthCmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Kubernetes namespace (default: all namespaces)")
 	k8sHealthCmd.Flags().BoolVarP(&allNamespaces, "all-namespaces", "A", true, "Check all namespaces")
@@ -74,6 +92,9 @@ func init() {
 	k8sCertsCmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Kubernetes namespace (default: all namespaces)")
 	k8sCertsCmd.Flags().IntVar(&expiryDays, "expiry-days", 30, "Show certificates expiring within N days")
 	k8sCertsCmd.Flags().StringVar(&k8sSlackWebhook, "slack-webhook", "", "Slack webhook URL for certificate expiry alerts")
+
+	k8sPDBCmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Kubernetes namespace (default: all namespaces)")
+	k8sPDBCmd.Flags().StringVar(&k8sSlackWebhook, "slack-webhook", "", "Slack webhook URL for PDB alerts")
 }
 
 func runK8sHealth(cmd *cobra.Command, args []string) error {
@@ -324,6 +345,190 @@ func formatCertFindings(results *k8s.CertificateResults) string {
 
 	if text == "" {
 		text = "✅ All certificates are valid"
+	}
+
+	return text
+}
+
+func runK8sPDB(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	fmt.Println("🛡️  Checking PodDisruptionBudget status...\n")
+
+	checker, err := k8s.NewHealthChecker()
+	if err != nil {
+		return fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	// Determine namespace
+	ns := namespace
+	if ns == "" {
+		fmt.Println("Scanning all namespaces for PodDisruptionBudgets...\n")
+	} else {
+		fmt.Printf("Scanning namespace '%s' for PodDisruptionBudgets...\n\n", ns)
+	}
+
+	// Check PDB status
+	results, err := checker.CheckPDBStatus(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("failed to check PDBs: %w", err)
+	}
+
+	// Display results
+	if len(results.PDBs) == 0 {
+		fmt.Printf("No PodDisruptionBudgets found (scanned %d namespaces)\n", results.TotalScanned)
+	} else {
+		fmt.Printf("🛡️  PodDisruptionBudget Status\n")
+		fmt.Println("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
+		fmt.Printf("%-20s %-25s %-15s %-10s %-10s %s\n",
+			"NAMESPACE", "NAME", "MIN AVAIL", "CURRENT", "ALLOWED", "STATUS")
+		fmt.Println("────────────────────┼─────────────────────────┼───────────────┼──────────┼──────────┼────────────────────────────────────")
+
+		// Print each PDB with color coding
+		for _, pdb := range results.PDBs {
+			color := pdb.GetColorCode()
+			reset := k8s.ResetColor()
+
+			// Truncate names if too long
+			ns := pdb.Namespace
+			if len(ns) > 18 {
+				ns = ns[:15] + "..."
+			}
+
+			name := pdb.Name
+			if len(name) > 23 {
+				name = name[:20] + "..."
+			}
+
+			minAvail := pdb.FormatMinAvailable()
+			if len(minAvail) > 13 {
+				minAvail = minAvail[:10] + "..."
+			}
+
+			fmt.Printf("%s%-20s %-25s %-15s %-10d %-10d %s%s\n",
+				color,
+				ns,
+				name,
+				minAvail,
+				pdb.CurrentHealthy,
+				pdb.DisruptionsAllowed,
+				pdb.GetStatusDisplay(),
+				reset)
+		}
+
+		// Print summary
+		fmt.Println("\nSummary:")
+		if results.HealthyCount > 0 {
+			fmt.Printf("✅ Healthy: %d\n", results.HealthyCount)
+		}
+		if results.AtRiskCount > 0 {
+			fmt.Printf("⚠️  At-Risk (0 disruptions allowed): %d\n", results.AtRiskCount)
+		}
+		if results.CriticalCount > 0 {
+			fmt.Printf("🔴 Critical (0 disruptions + unhealthy): %d\n", results.CriticalCount)
+		}
+		if results.NoPodsCount > 0 {
+			fmt.Printf("❌ No Matching Pods: %d\n", results.NoPodsCount)
+		}
+	}
+
+	// Send Slack alert if configured and issues found
+	if k8sSlackWebhook != "" && (results.AtRiskCount > 0 || results.CriticalCount > 0 || results.NoPodsCount > 0) {
+		fmt.Println("\n📢 Sending Slack alert...")
+
+		notifier := notify.NewSlackNotifier(k8sSlackWebhook)
+
+		// Build alert message
+		message := fmt.Sprintf("Found %d PodDisruptionBudget issue(s)",
+			results.AtRiskCount+results.CriticalCount+results.NoPodsCount)
+
+		err := sendPDBSlackAlert(notifier, message, results)
+		if err != nil {
+			fmt.Printf("⚠️  Warning: Failed to send Slack alert: %v\n", err)
+		} else {
+			fmt.Println("✅ Slack alert sent successfully!")
+		}
+	} else if k8sSlackWebhook != "" {
+		fmt.Println("\nℹ️  Slack webhook configured but all PDBs are healthy - no alert sent")
+	}
+
+	return nil
+}
+
+// sendPDBSlackAlert sends a PDB status alert to Slack
+func sendPDBSlackAlert(notifier *notify.SlackNotifier, message string, results *k8s.PDBResults) error {
+	slackMsg := notify.SlackMessage{
+		Text: fmt.Sprintf(":shield: *Kubernetes PodDisruptionBudget Alert*\n%s", message),
+		Attachments: []notify.Attachment{
+			{
+				Color: determinePDBColor(results),
+				Text:  formatPDBFindings(results),
+				Fields: []notify.Field{
+					{
+						Title: ":clipboard: Total PDBs",
+						Value: fmt.Sprintf("%d", results.TotalScanned),
+						Short: true,
+					},
+					{
+						Title: ":warning: At-Risk",
+						Value: fmt.Sprintf("%d", results.AtRiskCount),
+						Short: true,
+					},
+					{
+						Title: ":red_circle: Critical",
+						Value: fmt.Sprintf("%d", results.CriticalCount),
+						Short: true,
+					},
+					{
+						Title: ":x: No Matching Pods",
+						Value: fmt.Sprintf("%d", results.NoPodsCount),
+						Short: true,
+					},
+				},
+			},
+		},
+	}
+
+	return notifier.SendSlackMessage(slackMsg)
+}
+
+func determinePDBColor(results *k8s.PDBResults) string {
+	if results.CriticalCount > 0 {
+		return "danger" // Red
+	} else if results.AtRiskCount > 0 || results.NoPodsCount > 0 {
+		return "warning" // Yellow
+	}
+	return "good" // Green
+}
+
+func formatPDBFindings(results *k8s.PDBResults) string {
+	var text string
+
+	for _, pdb := range results.PDBs {
+		// Only include non-healthy PDBs in alert
+		if pdb.Status == "healthy" {
+			continue
+		}
+
+		status := ""
+		switch pdb.Status {
+		case "critical":
+			status = "🔴 CRITICAL"
+		case "at-risk":
+			status = "🟡 AT-RISK"
+		case "no-pods":
+			status = "⚪ NO-PODS"
+		}
+
+		text += fmt.Sprintf("%s *%s/%s* - %s\n",
+			status,
+			pdb.Namespace,
+			pdb.Name,
+			pdb.StatusMessage)
+	}
+
+	if text == "" {
+		text = "✅ All PDBs are healthy"
 	}
 
 	return text
