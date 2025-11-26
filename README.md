@@ -14,6 +14,13 @@ A production-grade CLI toolkit for DevOps engineers, built in Go. Provides essen
 - **Cost analysis** - Calculate potential monthly savings across all resources
 - **Slack notifications** - Real-time alerts for cost-saving opportunities
 
+### 🔒 AWS Security Auditing
+- **Public S3 buckets** - Detect buckets with public ACLs or disabled block public access
+- **Open Security Groups** - Find security groups with risky ports exposed to 0.0.0.0/0
+- **Severity classification** - Critical, High, Medium severity levels
+- **Color-coded output** - Visual indicators for security issues
+- **Slack alerts** - Real-time notifications for security findings
+
 ### 🏥 Kubernetes Operations
 - **Health checks** - Comprehensive pod, deployment, and node status
 - **Certificate monitoring** - TLS certificate expiry tracking with configurable thresholds
@@ -101,6 +108,9 @@ dtk cost report --days 30 --group-by SERVICE
 dtk k8s certs --namespace production \
   --expiry-days 7 \
   --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Security audit
+dtk aws security --region eu-north-1
 ```
 
 ## Usage
@@ -151,6 +161,54 @@ vol-0xyz789abc12   50         gp2   us-east-1b   120         $5.00
 Total: $127.50
 
 💡 Annual savings potential: $1,530.00
+```
+
+### AWS Security Checks
+
+Scan your AWS account for security misconfigurations.
+
+```bash
+# Check security in specific region
+dtk aws security --region eu-north-1
+
+# With Slack alerts
+dtk aws security --region us-east-1 --slack-webhook https://hooks.slack.com/services/xxx
+```
+
+**Checks for:**
+- **Public S3 buckets** - Buckets with public ACLs or disabled block public access
+- **Open Security Groups** - Risky ports exposed to 0.0.0.0/0:
+  - Port 22 (SSH) - Critical
+  - Port 3389 (RDP) - Critical
+  - Port 3306 (MySQL) - Critical
+  - Port 5432 (PostgreSQL) - Critical
+  - Port 27017 (MongoDB) - Critical
+
+**Flags:**
+- `--region` / `-r`: AWS region to audit (default: us-east-1 or AWS_REGION env)
+- `--slack-webhook`: Slack webhook URL for security alerts
+
+**Example output:**
+```
+🔒 AWS Security Audit
+═══════════════════════════════════════════════════════════
+Region: eu-north-1
+
+🪣 Public S3 Buckets
+─────────────────────────────────────────────────────────────
+  No public buckets found ✅
+
+🛡️ Open Security Groups (risky ports exposed to 0.0.0.0/0)
+─────────────────────────────────────────────────────────────
+SECURITY GROUP            | PORT  | PROTOCOL | SOURCE     | SEVERITY
+─────────────────────────┼───────┼──────────┼────────────┼──────────
+sg-0abc123 (default)      | 22    | TCP      | 0.0.0.0/0  | 🔴 CRITICAL
+sg-0def456 (web-sg)       | 3306  | TCP      | 0.0.0.0/0  | 🔴 CRITICAL
+
+Summary:
+🔴 Critical: 2
+🟡 High: 0
+🟠 Medium: 0
 ```
 
 ## Alerting
@@ -704,6 +762,12 @@ Required IAM permissions for full functionality:
         "ec2:DescribeInstances",
         "ec2:DescribeVolumes",
         "ec2:DescribeSnapshots",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeSecurityGroups",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketAcl",
         "cloudwatch:GetMetricStatistics",
         "ce:GetCostAndUsage"
       ],
