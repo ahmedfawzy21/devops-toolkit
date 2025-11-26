@@ -9,6 +9,7 @@ A production-grade CLI toolkit for DevOps engineers, built in Go. Provides essen
 - Identify underutilized EC2 instances (< 5% CPU)
 - Detect orphaned EBS snapshots
 - Calculate potential monthly savings
+- Slack notifications for audit alerts
 
 ### 🏥 Kubernetes Health Checking
 - Comprehensive pod status across namespaces
@@ -79,6 +80,14 @@ dtk aws audit --format json
 
 # Output as CSV
 dtk aws audit --format csv
+
+# Send Slack alerts when savings are found
+dtk aws audit --slack-webhook https://hooks.slack.com/services/xxx --alert-threshold 10
+
+# Audit multiple regions with Slack notifications
+dtk aws audit --regions us-east-1,us-west-2,eu-west-1 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+  --alert-threshold 100
 ```
 
 Example output:
@@ -100,6 +109,61 @@ vol-0xyz789abc12   50         gp2   us-east-1b   120         $5.00
 Total: $127.50
 
 💡 Annual savings potential: $1,530.00
+```
+
+#### Slack Integration
+
+Get real-time alerts when cost-saving opportunities are detected:
+
+```bash
+# Send alert for any savings amount (threshold = 0)
+dtk aws audit --regions us-east-1 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Only alert if savings exceed $100/month
+dtk aws audit --regions us-east-1,us-west-2 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+  --alert-threshold 100
+
+# Combine with other flags
+dtk aws audit --regions eu-west-1 \
+  --format json \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+  --alert-threshold 50 \
+  --no-snapshots
+```
+
+The Slack message includes:
+- 📊 Resource counts with emoji icons
+- 💰 Total potential monthly savings
+- 🎨 Color-coded severity (green/yellow/red based on savings)
+- ⏰ Timestamp of the audit
+- 📋 Breakdown by resource type (EBS, EC2, RDS, Snapshots, EIPs)
+
+**Example Slack message:**
+```
+🔍 AWS DevOps Audit Report
+AWS audit completed for regions: us-east-1, us-west-2
+
+📦 Unattached EBS Volumes: 5 (Est. $45.00/mo)
+💻 Underutilized EC2 Instances: 2 (Est. $100.00/mo)
+🗄️  Underutilized RDS Instances: 1 (Est. $145.00/mo)
+📸 Orphaned Snapshots: 12 (Est. $25.00/mo)
+🌐 Unused Elastic IPs: 3 (Est. $10.80/mo)
+
+💰 Total Potential Savings: $325.80/month
+📅 Timestamp: 2024-11-26 15:30:45 UTC
+📋 Total Resources Found: 23
+```
+
+**Setup Slack webhook:**
+1. Go to your Slack workspace
+2. Navigate to: Apps → Incoming Webhooks
+3. Click "Add to Slack"
+4. Choose a channel and click "Add Incoming Webhooks Integration"
+5. Copy the webhook URL
+6. Use the URL with `--slack-webhook` flag
+
 ```
 
 ### Kubernetes Health Check
@@ -223,9 +287,12 @@ devops-toolkit/
 ├── pkg/                    # Core packages
 │   ├── aws/               # AWS SDK operations
 │   │   ├── auditor.go     # Resource auditing
+│   │   ├── rds.go         # RDS auditing
 │   │   └── cost.go        # Cost analysis
 │   ├── k8s/               # Kubernetes operations
 │   │   └── health.go      # Health checking
+│   ├── notify/            # Notification integrations
+│   │   └── slack.go       # Slack webhook alerts
 │   └── reporter/          # Output formatting
 │       └── reporter.go    # Table/JSON/CSV rendering
 ├── main.go                # Entry point
@@ -315,9 +382,12 @@ rules:
 
 ## Roadmap
 
+### Completed Features
+- [x] Slack notifications for cost alerts
+
 ### Planned Features
 - [ ] Multi-cloud support (Azure, GCP)
-- [ ] Slack/Teams notifications
+- [ ] Microsoft Teams notifications
 - [ ] Prometheus metrics export
 - [ ] Historical trend analysis
 - [ ] Automated remediation suggestions
