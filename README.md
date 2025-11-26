@@ -5,31 +5,37 @@ A production-grade CLI toolkit for DevOps engineers, built in Go. Provides essen
 ## Features
 
 ### 🔍 AWS Resource Auditing
-- Find unattached EBS volumes
-- Identify underutilized EC2 instances (< 5% CPU)
-- Detect orphaned EBS snapshots
-- Calculate potential monthly savings
-- Slack notifications for audit alerts
+- **Multi-region scanning** - Audit multiple AWS regions simultaneously
+- **EBS volumes** - Find unattached volumes and calculate storage waste
+- **EC2 instances** - Identify underutilized instances (< 5% CPU over 7 days)
+- **RDS databases** - Detect underutilized RDS instances (< 10% CPU)
+- **EBS snapshots** - Find orphaned snapshots from deleted volumes
+- **Elastic IPs** - Identify unused/unattached Elastic IPs
+- **Cost analysis** - Calculate potential monthly savings across all resources
+- **Slack notifications** - Real-time alerts for cost-saving opportunities
 
-### 🏥 Kubernetes Health Checking
-- Comprehensive pod status across namespaces
-- Deployment health and readiness
-- Node status and capacity
-- Recent warning events
-- TLS certificate expiry monitoring
-- Slack alerts for expiring certificates
+### 🏥 Kubernetes Operations
+- **Health checks** - Comprehensive pod, deployment, and node status
+- **Certificate monitoring** - TLS certificate expiry tracking with configurable thresholds
+- **PodDisruptionBudget monitoring** - Detect at-risk PDBs and misconfigured disruption budgets
+- **Multi-namespace support** - Scan all namespaces or target specific ones
+- **Color-coded output** - Visual status indicators (🔴 critical, 🟡 warning, 🟢 healthy)
+- **Slack alerts** - Proactive notifications for certificates and PDB issues
 
-### 📢 Slack/Webhook Alerting
-- Real-time notifications for AWS cost findings
-- Certificate expiry alerts for Kubernetes
-- Configurable alert thresholds
-- Color-coded severity indicators
+### 📢 Alerting & Notifications
+- **Slack webhook integration** - Real-time alerts to Slack channels
+- **AWS audit alerts** - Configurable thresholds for cost savings notifications
+- **Certificate expiry alerts** - Automated warnings for expiring TLS certificates
+- **PDB health alerts** - Notifications for disruption budget issues
+- **Color-coded severity** - Green (healthy), yellow (warning), red (critical)
+- **Detailed findings** - Rich message formatting with resource counts and status
 
 ### 💰 AWS Cost Reporting
-- Daily/weekly/monthly spending trends
-- Cost breakdown by service, region, or instance type
-- Top spending resources identification
-- Month-over-month comparison
+- **Time-based analysis** - Daily, weekly, or monthly spending trends
+- **Multi-dimensional grouping** - Cost breakdown by service, region, or instance type
+- **Top spenders** - Identify highest-cost resources
+- **Trend comparison** - Month-over-month cost analysis
+- **Budget tracking** - Monitor spending against targets
 
 ## Installation
 
@@ -67,6 +73,34 @@ make run
 
 # Or directly
 ./dtk --help
+```
+
+## Quick Start Examples
+
+Get started quickly with these common usage patterns:
+
+```bash
+# Full AWS audit with Slack alerts for savings over $50
+dtk aws audit --regions us-east-1,eu-west-1 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+  --alert-threshold 50
+
+# Check Kubernetes certificates expiring within 14 days
+dtk k8s certs --expiry-days 14
+
+# Check PodDisruptionBudget status in production namespace
+dtk k8s pdb --namespace production
+
+# Combined Kubernetes health check
+dtk k8s health && dtk k8s certs && dtk k8s pdb
+
+# Multi-region AWS cost analysis
+dtk cost report --days 30 --group-by SERVICE
+
+# Production certificate monitoring with alerts
+dtk k8s certs --namespace production \
+  --expiry-days 7 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 ```
 
 ## Usage
@@ -119,17 +153,24 @@ Total: $127.50
 💡 Annual savings potential: $1,530.00
 ```
 
-#### Slack Integration
+## Alerting
 
-Get real-time alerts when cost-saving opportunities are detected or certificates are expiring.
+### Slack Integration
+
+Get real-time alerts for AWS cost findings, certificate expiry, and PodDisruptionBudget issues.
 
 **Setup Slack Webhook:**
 1. Go to your Slack workspace
-2. Navigate to: Apps → Incoming Webhooks
+2. Navigate to: Apps → [Incoming Webhooks](https://slack.com/apps/A0F7XDUAZ-incoming-webhooks)
 3. Click "Add to Slack"
 4. Choose a channel and click "Add Incoming Webhooks Integration"
 5. Copy the webhook URL (format: `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX`)
 6. Use the URL with `--slack-webhook` flag
+
+**Color-Coded Alerts:**
+- 🟢 **Green (Good)** - Low severity, healthy status
+- 🟡 **Yellow (Warning)** - Medium severity, at-risk status
+- 🔴 **Red (Danger)** - High severity, critical issues
 
 **AWS Audit Alerts:**
 
@@ -208,7 +249,11 @@ Found 3 TLS certificate(s) expiring within 30 days
 ```
 
 
-### Kubernetes Health Check
+## Kubernetes Commands
+
+### Health Check
+
+Perform comprehensive health checks on your Kubernetes cluster.
 
 ```bash
 # Check all namespaces
@@ -224,7 +269,7 @@ dtk k8s health --nodes=false
 dtk k8s health --format json
 ```
 
-Example output:
+**Example output:**
 ```
 🏥 Checking Kubernetes cluster health...
 
@@ -247,7 +292,7 @@ default     nginx   3/3    3           3          15d
 ✅ No warning events in the last hour
 ```
 
-### Kubernetes Certificate Expiry Monitoring
+### Certificate Expiry Monitoring
 
 Monitor TLS certificate expiration in your Kubernetes cluster to prevent service disruptions.
 
@@ -314,7 +359,65 @@ old-cert                       default              -5              old.example.
 - Compliance auditing for certificate lifecycle management
 - Automated alerting in CI/CD pipelines
 
-### Cost Reporting
+### PodDisruptionBudget Monitoring
+
+Check the health status of PodDisruptionBudgets to ensure cluster resilience.
+
+```bash
+# Check all namespaces
+dtk k8s pdb
+
+# Check specific namespace
+dtk k8s pdb --namespace production
+
+# With Slack alerts for issues
+dtk k8s pdb --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+```
+
+**Flags:**
+- `--namespace` / `-n`: Specific namespace to scan (default: all namespaces)
+- `--slack-webhook`: Slack webhook URL for PDB health alerts
+
+**Status Types:**
+- 🟢 **Healthy** - Disruptions allowed > 0, all pods healthy
+- 🟡 **At-Risk** - Zero disruptions allowed OR unhealthy pods
+- 🔴 **Critical** - Zero disruptions allowed AND unhealthy pods
+- ⚪ **No-Pods** - PDB has no matching pods (misconfigured selector)
+
+**Example output:**
+```
+🛡️  Checking PodDisruptionBudget status...
+
+Scanning all namespaces for PodDisruptionBudgets...
+
+🛡️  PodDisruptionBudget Status
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+NAMESPACE            NAME                      MIN AVAIL       CURRENT    ALLOWED    STATUS
+────────────────────┼─────────────────────────┼───────────────┼──────────┼──────────┼────────────────────────────────────
+production           api-pdb                   2               3          1          🟢 healthy
+production           web-pdb                   80%             2          0          🟡 at-risk
+staging              db-pdb                    1               0          0          ⚪ no-pods
+
+Summary:
+✅ Healthy: 1
+⚠️  At-Risk (0 disruptions allowed): 1
+❌ No Matching Pods: 1
+```
+
+**What it checks:**
+- Scans all PodDisruptionBudgets across namespaces
+- Identifies PDBs with zero disruptions allowed (prevents safe evictions)
+- Detects misconfigured PDBs with no matching pods
+- Finds PDBs with unhealthy pods
+- Sends Slack alerts for at-risk or critical PDBs
+
+**Use cases:**
+- Ensure safe cluster maintenance and node draining
+- Prevent deployment issues due to restrictive PDBs
+- Detect misconfigured disruption budgets
+- Monitor application availability guarantees
+
+## Cost Reporting
 
 ```bash
 # Last 7 days cost report
@@ -558,11 +661,34 @@ make install
 
 ## Requirements
 
-### Go Dependencies
-- `github.com/spf13/cobra` - CLI framework
-- `github.com/aws/aws-sdk-go-v2` - AWS SDK
-- `k8s.io/client-go` - Kubernetes client
-- `github.com/olekukonko/tablewriter` - Table formatting
+### System Requirements
+- **Go 1.21+** - Modern Go version with generics support
+- **AWS credentials** - Configured via `~/.aws/credentials` or environment variables
+- **kubectl** - Configured for Kubernetes operations (for k8s commands)
+
+### Built With
+
+**Core Technologies:**
+- **Go 1.21+** - Primary programming language
+- **Cobra** (`github.com/spf13/cobra`) - CLI framework and command structure
+- **AWS SDK for Go v2** (`github.com/aws/aws-sdk-go-v2`) - AWS service integrations
+- **Kubernetes client-go** (`k8s.io/client-go`) - Kubernetes API interactions
+
+**AWS SDKs:**
+- `aws-sdk-go-v2/service/ec2` - EC2 and EBS operations
+- `aws-sdk-go-v2/service/rds` - RDS database monitoring
+- `aws-sdk-go-v2/service/cloudwatch` - Metrics and monitoring
+- `aws-sdk-go-v2/service/costexplorer` - Cost analysis and reporting
+
+**Kubernetes SDKs:**
+- `k8s.io/api/core/v1` - Core Kubernetes resources
+- `k8s.io/api/apps/v1` - Deployments and workloads
+- `k8s.io/api/policy/v1` - PodDisruptionBudgets
+
+**Utilities:**
+- `github.com/olekukonko/tablewriter` - Formatted table output
+- Standard library `crypto/x509` - Certificate parsing
+- Standard library `net/http` - Webhook integrations
 
 ### AWS Permissions
 
