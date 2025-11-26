@@ -78,6 +78,15 @@ func (s *SlackNotifier) SendAlert(message string, findings aws.AuditResults) err
 	// Build the formatted message
 	slackMsg := s.buildSlackMessage(message, findings)
 
+	return s.SendSlackMessage(slackMsg)
+}
+
+// SendSlackMessage sends a pre-formatted Slack message
+func (s *SlackNotifier) SendSlackMessage(slackMsg SlackMessage) error {
+	if s.WebhookURL == "" {
+		return fmt.Errorf("webhook URL is empty")
+	}
+
 	// Marshal to JSON
 	payload, err := json.Marshal(slackMsg)
 	if err != nil {

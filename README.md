@@ -16,6 +16,14 @@ A production-grade CLI toolkit for DevOps engineers, built in Go. Provides essen
 - Deployment health and readiness
 - Node status and capacity
 - Recent warning events
+- TLS certificate expiry monitoring
+- Slack alerts for expiring certificates
+
+### 📢 Slack/Webhook Alerting
+- Real-time notifications for AWS cost findings
+- Certificate expiry alerts for Kubernetes
+- Configurable alert thresholds
+- Color-coded severity indicators
 
 ### 💰 AWS Cost Reporting
 - Daily/weekly/monthly spending trends
@@ -113,7 +121,17 @@ Total: $127.50
 
 #### Slack Integration
 
-Get real-time alerts when cost-saving opportunities are detected:
+Get real-time alerts when cost-saving opportunities are detected or certificates are expiring.
+
+**Setup Slack Webhook:**
+1. Go to your Slack workspace
+2. Navigate to: Apps → Incoming Webhooks
+3. Click "Add to Slack"
+4. Choose a channel and click "Add Incoming Webhooks Integration"
+5. Copy the webhook URL (format: `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX`)
+6. Use the URL with `--slack-webhook` flag
+
+**AWS Audit Alerts:**
 
 ```bash
 # Send alert for any savings amount (threshold = 0)
@@ -133,14 +151,14 @@ dtk aws audit --regions eu-west-1 \
   --no-snapshots
 ```
 
-The Slack message includes:
+The AWS audit Slack message includes:
 - 📊 Resource counts with emoji icons
 - 💰 Total potential monthly savings
 - 🎨 Color-coded severity (green/yellow/red based on savings)
 - ⏰ Timestamp of the audit
 - 📋 Breakdown by resource type (EBS, EC2, RDS, Snapshots, EIPs)
 
-**Example Slack message:**
+**Example AWS Audit Slack Message:**
 ```
 🔍 AWS DevOps Audit Report
 AWS audit completed for regions: us-east-1, us-west-2
@@ -156,15 +174,39 @@ AWS audit completed for regions: us-east-1, us-west-2
 📋 Total Resources Found: 23
 ```
 
-**Setup Slack webhook:**
-1. Go to your Slack workspace
-2. Navigate to: Apps → Incoming Webhooks
-3. Click "Add to Slack"
-4. Choose a channel and click "Add Incoming Webhooks Integration"
-5. Copy the webhook URL
-6. Use the URL with `--slack-webhook` flag
+**Kubernetes Certificate Alerts:**
 
+```bash
+# Alert if any certificates expiring within 30 days
+dtk k8s certs --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Alert for certificates expiring within 14 days in production namespace
+dtk k8s certs --namespace production \
+  --expiry-days 14 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 ```
+
+The certificate expiry Slack message includes:
+- 🔐 List of expiring certificates with status
+- 📅 Days remaining for each certificate
+- 🎨 Color-coded severity (red: critical/expired, yellow: expiring soon, green: valid)
+- 📊 Summary counts (total, critical, expiring, expired)
+
+**Example Certificate Expiry Slack Message:**
+```
+🔐 Kubernetes TLS Certificate Expiry Alert
+Found 3 TLS certificate(s) expiring within 30 days
+
+🔴 EXPIRED default/old-cert - -5 days remaining (example.com)
+🟠 CRITICAL production/api-cert - 3 days remaining (api.example.com, www.example.com)
+🟡 EXPIRING SOON staging/web-cert - 25 days remaining (staging.example.com)
+
+📅 Certificates Found: 3
+⚠️ Critical (<7 days): 1
+⏳ Expiring Soon (<30 days): 1
+❌ Expired: 1
+```
+
 
 ### Kubernetes Health Check
 
@@ -204,6 +246,73 @@ default     nginx   3/3    3           3          15d
 
 ✅ No warning events in the last hour
 ```
+
+### Kubernetes Certificate Expiry Monitoring
+
+Monitor TLS certificate expiration in your Kubernetes cluster to prevent service disruptions.
+
+```bash
+# Check all namespaces for certificates expiring within 30 days (default)
+dtk k8s certs
+
+# Check specific namespace
+dtk k8s certs --namespace production
+
+# Check for certificates expiring within 60 days
+dtk k8s certs --expiry-days 60
+
+# Check with Slack alerts
+dtk k8s certs --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Combine flags for production monitoring
+dtk k8s certs --namespace production \
+  --expiry-days 14 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+```
+
+**Flags:**
+- `--namespace` / `-n`: Specific namespace to scan (default: all namespaces)
+- `--expiry-days`: Show certificates expiring within N days (default: 30)
+- `--slack-webhook`: Slack webhook URL for certificate expiry alerts
+
+**Color Coding:**
+- 🔴 **Red** - Expired or Critical (<7 days remaining)
+- 🟡 **Yellow** - Expiring Soon (7-30 days remaining)
+- 🟢 **Green** - Valid (>30 days remaining)
+
+**Example output:**
+```
+🔐 Checking TLS certificate expiry in Kubernetes...
+
+Scanning all namespaces for TLS certificates expiring within 30 days...
+
+Found 4 certificate(s) expiring within 30 days (scanned 15 TLS secrets)
+
+SECRET                         NAMESPACE            DAYS REMAINING  DNS NAMES                                EXPIRY DATE          STATUS
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+api-tls-cert                   production           3               api.example.com, www.example.com         2024-11-29 14:30     critical
+ingress-tls                    default              15              *.example.com                            2024-12-11 10:20     expiring-soon
+web-cert                       staging              25              staging.example.com                      2024-12-21 08:15     expiring-soon
+old-cert                       default              -5              old.example.com                          2024-11-21 12:00     expired
+
+🔴 Expired: 1
+🟠 Critical (<7 days): 1
+🟡 Expiring Soon (<30 days): 2
+```
+
+**What it checks:**
+- Scans all `kubernetes.io/tls` type secrets
+- Parses X.509 certificates from `tls.crt` data
+- Extracts certificate metadata: DNS names, common name, expiry date
+- Calculates days remaining until expiration
+- Filters by expiry threshold (default 30 days)
+- Sends Slack alerts if configured and certificates are expiring
+
+**Use cases:**
+- Proactive certificate renewal monitoring
+- Prevent production outages due to expired certificates
+- Compliance auditing for certificate lifecycle management
+- Automated alerting in CI/CD pipelines
 
 ### Cost Reporting
 
@@ -271,6 +380,122 @@ kubectl cluster-info
 
 # Set default namespace (optional)
 kubectl config set-context --current --namespace=production
+```
+
+## Common Usage Examples
+
+Here are some real-world usage examples combining different features:
+
+### AWS Audit with Slack Alerts
+
+```bash
+# Basic audit with Slack notifications
+dtk aws audit --regions eu-north-1 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Multi-region audit with alert threshold
+dtk aws audit --regions us-east-1,us-west-2,eu-west-1 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+  --alert-threshold 100
+
+# Targeted audit - only EBS and EC2 with JSON output
+dtk aws audit --regions us-east-1 \
+  --ebs --ec2 \
+  --no-snapshots --no-eips --no-rds \
+  --format json \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+```
+
+### Kubernetes Certificate Monitoring
+
+```bash
+# Check all certificates expiring within 30 days
+dtk k8s certs --expiry-days 30
+
+# Production namespace with 14-day warning
+dtk k8s certs --namespace production --expiry-days 14
+
+# Production monitoring with Slack alerts
+dtk k8s certs --namespace production \
+  --expiry-days 14 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Critical alerts - only show certificates expiring within 7 days
+dtk k8s certs --expiry-days 7 \
+  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+```
+
+### Scheduled Monitoring (Cron Jobs)
+
+Set up automated monitoring with cron:
+
+```bash
+# Add to crontab (crontab -e)
+
+# Daily AWS audit at 9 AM with Slack alerts
+0 9 * * * /usr/local/bin/dtk aws audit --regions us-east-1 --slack-webhook https://hooks.slack.com/xxx --alert-threshold 50
+
+# Weekly certificate check on Mondays at 8 AM
+0 8 * * 1 /usr/local/bin/dtk k8s certs --expiry-days 30 --slack-webhook https://hooks.slack.com/xxx
+
+# Hourly critical certificate check for production
+0 * * * * /usr/local/bin/dtk k8s certs --namespace production --expiry-days 7 --slack-webhook https://hooks.slack.com/xxx
+```
+
+### CI/CD Pipeline Integration
+
+```yaml
+# Example GitHub Actions workflow
+name: Infrastructure Audit
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Daily at 9 AM
+  workflow_dispatch:
+
+jobs:
+  aws-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run AWS Audit
+        run: |
+          dtk aws audit \
+            --regions us-east-1,eu-west-1 \
+            --slack-webhook ${{ secrets.SLACK_WEBHOOK }} \
+            --alert-threshold 100
+
+  k8s-cert-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Certificate Expiry
+        run: |
+          dtk k8s certs \
+            --expiry-days 30 \
+            --slack-webhook ${{ secrets.SLACK_WEBHOOK }}
+```
+
+### Combined Monitoring Script
+
+```bash
+#!/bin/bash
+# daily-audit.sh - Comprehensive infrastructure monitoring
+
+SLACK_WEBHOOK="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+echo "Running AWS Audit..."
+dtk aws audit \
+  --regions us-east-1,us-west-2 \
+  --slack-webhook "$SLACK_WEBHOOK" \
+  --alert-threshold 50
+
+echo "Checking Kubernetes certificates..."
+dtk k8s certs \
+  --expiry-days 30 \
+  --slack-webhook "$SLACK_WEBHOOK"
+
+echo "Checking Kubernetes health..."
+dtk k8s health --all-namespaces
+
+echo "Audit complete!"
 ```
 
 ## Development
