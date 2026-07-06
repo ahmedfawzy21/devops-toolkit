@@ -29,12 +29,12 @@ type UnattachedVolume struct {
 }
 
 type UnderutilizedInstance struct {
-	InstanceID       string
-	InstanceType     string
-	State            string
+	InstanceID        string
+	InstanceType      string
+	State             string
 	AvgCPUUtilization float64
-	MonthlyCost      float64
-	LaunchTime       time.Time
+	MonthlyCost       float64
+	LaunchTime        time.Time
 }
 
 type OrphanedSnapshot struct {
@@ -57,6 +57,8 @@ type AuditResults struct {
 	UnderutilizedRDSInstances []UnderutilizedRDSInstance
 	OrphanedSnapshots         []OrphanedSnapshot
 	UnusedElasticIPs          []UnusedElasticIP
+	LogGroupFindings          []LogGroupFinding
+	DynamoDBFindings          []DynamoDBFinding
 	TotalPotentialSavings     float64
 }
 
@@ -91,7 +93,7 @@ func (a *Auditor) FindUnattachedVolumes(ctx context.Context) ([]UnattachedVolume
 	volumes := make([]UnattachedVolume, 0, len(result.Volumes))
 	for _, vol := range result.Volumes {
 		cost := calculateEBSCost(aws.ToInt32(vol.Size), string(vol.VolumeType))
-		
+
 		volumes = append(volumes, UnattachedVolume{
 			VolumeID:         aws.ToString(vol.VolumeId),
 			Size:             aws.ToInt32(vol.Size),
@@ -145,7 +147,7 @@ func (a *Auditor) FindUnderutilizedInstances(ctx context.Context) ([]Underutiliz
 	}
 
 	instances := make([]UnderutilizedInstance, 0)
-	
+
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
 			// Get CPU metrics from CloudWatch
@@ -159,7 +161,7 @@ func (a *Auditor) FindUnderutilizedInstances(ctx context.Context) ([]Underutiliz
 			// Flag instances with < 5% CPU utilization
 			if avgCPU >= 0 && avgCPU < 5.0 {
 				cost := estimateEC2Cost(string(instance.InstanceType))
-				
+
 				instances = append(instances, UnderutilizedInstance{
 					InstanceID:        aws.ToString(instance.InstanceId),
 					InstanceType:      string(instance.InstanceType),
@@ -203,7 +205,7 @@ func (a *Auditor) FindOrphanedSnapshots(ctx context.Context) ([]OrphanedSnapshot
 		// Check if the source volume no longer exists
 		if !volumeIDs[aws.ToString(snap.VolumeId)] {
 			cost := calculateSnapshotCost(aws.ToInt32(snap.VolumeSize))
-			
+
 			snapshots = append(snapshots, OrphanedSnapshot{
 				SnapshotID:  aws.ToString(snap.SnapshotId),
 				Size:        aws.ToInt32(snap.VolumeSize),
@@ -277,13 +279,21 @@ func (r *AuditResults) CalculateSavings() {
 		total += eip.MonthlyCost
 	}
 
+	for _, lg := range r.LogGroupFindings {
+		total += lg.MonthlyCost
+	}
+
+	for _, ddb := range r.DynamoDBFindings {
+		total += ddb.MonthlyCost
+	}
+
 	r.TotalPotentialSavings = total
 }
 
 // Cost estimation functions (simplified - actual costs vary by region and usage)
 func calculateEBSCost(sizeGB int32, volumeType string) float64 {
 	pricePerGB := 0.10 // Default gp3 price per GB-month
-	
+
 	switch volumeType {
 	case "gp2":
 		pricePerGB = 0.10

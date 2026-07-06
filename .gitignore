@@ -1,12 +1,23 @@
 # Binaries
-bin/
-dtk
-*.exe
+/ binaries
+/bin/
+/dist/
+/dtk
 
 # IDE/Editor
 .claude/
 .vscode/
 .idea/
+
+# Old tarball archives — stale, not source
+devops-toolkit.tar.gz
+devops-toolkit-tests-v1.tar.gz
+
+# Build instruction scratch files — not part of the project
+phase1_release.txt
+week3_rds.txt
+tree.txt
+technical*.md
 
 # Archives
 *.tar.gz
@@ -15,3 +26,23 @@ dtk
 # OS files
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+/bin/
+/dist/
+/dtk
+
+# Old archives
+devops-toolkit.tar.gz
+devops-toolkit-tests-v1.tar.gz
+
+# Scratch/instruction files
+phase1_release.txt
+week3_rds.txt
+tree.txt
+technical*.md
+
+# Claude Code session dir
+.claude/
+*~
+*~

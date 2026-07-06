@@ -1,160 +1,85 @@
-# DevOps Toolkit (dtk)
+# dtk — DevOps Toolkit
 
-A production-grade CLI toolkit for DevOps engineers, built in Go. Provides essential utilities for AWS resource auditing, Kubernetes health checking, and cost analysis.
+**A read-only AWS + Kubernetes cost and security auditor in a single Go binary.** One tool that covers more ground than a typical single-purpose scanner: cloud cost waste, EKS-layer cost intelligence, and deep security auditing across IAM, Lambda, RDS, secrets, IMDS, and EKS — every check a read-only API call that never touches your resources.
 
-## Features
+[![Go Version](https://img.shields.io/badge/go-1.24-00ADD8?logo=go)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ahmedfawzy21/devops-toolkit)](https://goreportcard.com/report/github.com/ahmedfawzy21/devops-toolkit)
 
-### 🔍 AWS Resource Auditing
-- **Multi-region scanning** - Audit multiple AWS regions simultaneously
-- **EBS volumes** - Find unattached volumes and calculate storage waste
-- **EC2 instances** - Identify underutilized instances (< 5% CPU over 7 days)
-- **RDS databases** - Detect underutilized RDS instances (< 10% CPU)
-- **EBS snapshots** - Find orphaned snapshots from deleted volumes
-- **Elastic IPs** - Identify unused/unattached Elastic IPs
-- **Cost analysis** - Calculate potential monthly savings across all resources
-- **Slack notifications** - Real-time alerts for cost-saving opportunities
+---
 
-### 🔒 AWS Security Auditing
-- **Public S3 buckets** - Detect buckets with public ACLs or disabled block public access
-- **Open Security Groups** - Find security groups with risky ports exposed to 0.0.0.0/0
-- **Severity classification** - Critical, High, Medium severity levels
-- **Color-coded output** - Visual indicators for security issues
-- **Slack alerts** - Real-time notifications for security findings
+## Why this exists
 
-### 🏥 Kubernetes Operations
-- **Health checks** - Comprehensive pod, deployment, and node status
-- **Certificate monitoring** - TLS certificate expiry tracking with configurable thresholds
-- **PodDisruptionBudget monitoring** - Detect at-risk PDBs and misconfigured disruption budgets
-- **Multi-namespace support** - Scan all namespaces or target specific ones
-- **Color-coded output** - Visual status indicators (🔴 critical, 🟡 warning, 🟢 healthy)
-- **Slack alerts** - Proactive notifications for certificates and PDB issues
+This tool grew out of running 15+ microservices on AWS EKS in production. The day-to-day
+reality there is that cost waste and security drift accumulate in the gaps *between*
+tools: Cost Explorer gives you a number but not which node group is 90% On-Demand; a cost
+scanner finds idle EBS volumes but says nothing about a Lambda with a public URL or an RDS
+instance running an end-of-life engine; `kubectl` shows you pods but not which ones ship
+with no memory limit and will get OOMKilled under load.
 
-### 📢 Alerting & Notifications
-- **Slack webhook integration** - Real-time alerts to Slack channels
-- **AWS audit alerts** - Configurable thresholds for cost savings notifications
-- **Certificate expiry alerts** - Automated warnings for expiring TLS certificates
-- **PDB health alerts** - Notifications for disruption budget issues
-- **Color-coded severity** - Green (healthy), yellow (warning), red (critical)
-- **Detailed findings** - Rich message formatting with resource counts and status
+`dtk` is the tool I wanted: one binary I could point at an account (or a cluster) and get
+an honest, prioritized list of what's wasting money and what's a security risk — without
+ever worrying it might *change* something. Every command is a `Describe` / `List` / `Get`
+call. It reads; it never writes.
 
-### 💰 AWS Cost Reporting
-- **Time-based analysis** - Daily, weekly, or monthly spending trends
-- **Multi-dimensional grouping** - Cost breakdown by service, region, or instance type
-- **Top spenders** - Identify highest-cost resources
-- **Trend comparison** - Month-over-month cost analysis
-- **Budget tracking** - Monitor spending against targets
+In production use it has helped reclaim roughly **[VERIFY: exact $ figure]/month** in
+recurring AWS spend and cut audit MTTR from **[VERIFY: exact before/after figure]**.
+*(These are placeholders — replace them with your own measured numbers before publishing;
+they are intentionally not fabricated here.)*
+
+---
 
 ## Installation
 
-### Prerequisites
-- Go 1.21 or higher
-- AWS credentials configured (`~/.aws/credentials` or environment variables)
-- kubectl configured for Kubernetes operations
-
-### Build from source
+### 1. Homebrew (recommended, once the tap is live)
 
 ```bash
-# Clone the repository
-git clone https://github.com/ahmedfawzy/devops-toolkit
+brew install ahmedfawzy21/tap/devops-toolkit
+```
+
+### 2. go install
+
+```bash
+go install github.com/ahmedfawzy21/devops-toolkit@latest
+```
+
+> Requires Go 1.24+. Installs the `dtk` binary into `$(go env GOPATH)/bin`.
+
+### 3. Build from source
+
+```bash
+git clone https://github.com/ahmedfawzy21/devops-toolkit.git
 cd devops-toolkit
-
-# Download dependencies
-go mod download
-
-# Build the binary
-go build -o dtk main.go
-
-# Install to $GOPATH/bin
-go install
-
-# Or use the Makefile
-make build
-make install
+go build -o dtk .
+./dtk --version
 ```
 
-### Quick start
+---
+
+## Quickstart
+
+The single most useful first command — a full cost-waste audit of a region:
 
 ```bash
-# Build and run
-make run
-
-# Or directly
-./dtk --help
+dtk aws audit --regions us-east-1
 ```
 
-## Quick Start Examples
+Example output *(illustrative — not real account data)*:
 
-Get started quickly with these common usage patterns:
-
-```bash
-# Full AWS audit with Slack alerts for savings over $50
-dtk aws audit --regions us-east-1,eu-west-1 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
-  --alert-threshold 50
-
-# Check Kubernetes certificates expiring within 14 days
-dtk k8s certs --expiry-days 14
-
-# Check PodDisruptionBudget status in production namespace
-dtk k8s pdb --namespace production
-
-# Combined Kubernetes health check
-dtk k8s health && dtk k8s certs && dtk k8s pdb
-
-# Multi-region AWS cost analysis
-dtk cost report --days 30 --group-by SERVICE
-
-# Production certificate monitoring with alerts
-dtk k8s certs --namespace production \
-  --expiry-days 7 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Security audit
-dtk aws security --region eu-north-1
 ```
+🔍 Auditing AWS resources in regions: us-east-1
 
-## Usage
-
-### AWS Resource Audit
-
-```bash
-# Audit all resources in default region
-dtk aws audit
-
-# Audit specific region
-dtk aws audit --region us-west-2
-
-# Audit only EBS volumes
-dtk aws audit --ebs --no-ec2 --no-snapshots
-
-# Output as JSON
-dtk aws audit --format json
-
-# Output as CSV
-dtk aws audit --format csv
-
-# Send Slack alerts when savings are found
-dtk aws audit --slack-webhook https://hooks.slack.com/services/xxx --alert-threshold 10
-
-# Audit multiple regions with Slack notifications
-dtk aws audit --regions us-east-1,us-west-2,eu-west-1 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
-  --alert-threshold 100
-```
-
-Example output:
-```
-🔍 Auditing AWS resources in region: us-east-1
-
-📦 Checking EBS volumes...
-💻 Checking EC2 instances...
-📸 Checking EBS snapshots...
+═══ Region: us-east-1 ═══
 
 📦 Unattached EBS Volumes
 ─────────────────────────────────────────────────────────────
-VOLUME ID          SIZE (GB)  TYPE  AZ           AGE (DAYS)  MONTHLY COST
-vol-0abc123def45   100        gp3   us-east-1a   45          $8.00
-vol-0xyz789abc12   50         gp2   us-east-1b   120         $5.00
+  VOLUME ID          SIZE (GB)  TYPE  AZ           AGE (DAYS)  MONTHLY COST
+  vol-0abc123def45   100        gp3   us-east-1a   45          $8.00
+  vol-0xyz789abc12   50         gp2   us-east-1b   120         $5.00
+
+💻 Underutilized EC2 Instances (< 5% CPU)
+─────────────────────────────────────────────────────────────
+  i-0aa11bb22cc33    t3.large   2.10%   running    88          $60.00
 
 💰 Potential Monthly Savings
 ─────────────────────────────────────────────────────────────
@@ -163,681 +88,119 @@ Total: $127.50
 💡 Annual savings potential: $1,530.00
 ```
 
-### AWS Security Checks
-
-Scan your AWS account for security misconfigurations.
-
-```bash
-# Check security in specific region
-dtk aws security --region eu-north-1
-
-# With Slack alerts
-dtk aws security --region us-east-1 --slack-webhook https://hooks.slack.com/services/xxx
-```
-
-**Checks for:**
-- **Public S3 buckets** - Buckets with public ACLs or disabled block public access
-- **Open Security Groups** - Risky ports exposed to 0.0.0.0/0:
-  - Port 22 (SSH) - Critical
-  - Port 3389 (RDP) - Critical
-  - Port 3306 (MySQL) - Critical
-  - Port 5432 (PostgreSQL) - Critical
-  - Port 27017 (MongoDB) - Critical
-
-**Flags:**
-- `--region` / `-r`: AWS region to audit (default: us-east-1 or AWS_REGION env)
-- `--slack-webhook`: Slack webhook URL for security alerts
-
-**Example output:**
-```
-🔒 AWS Security Audit
-═══════════════════════════════════════════════════════════
-Region: eu-north-1
-
-🪣 Public S3 Buckets
-─────────────────────────────────────────────────────────────
-  No public buckets found ✅
-
-🛡️ Open Security Groups (risky ports exposed to 0.0.0.0/0)
-─────────────────────────────────────────────────────────────
-SECURITY GROUP            | PORT  | PROTOCOL | SOURCE     | SEVERITY
-─────────────────────────┼───────┼──────────┼────────────┼──────────
-sg-0abc123 (default)      | 22    | TCP      | 0.0.0.0/0  | 🔴 CRITICAL
-sg-0def456 (web-sg)       | 3306  | TCP      | 0.0.0.0/0  | 🔴 CRITICAL
-
-Summary:
-🔴 Critical: 2
-🟡 High: 0
-🟠 Medium: 0
-```
-
-## Alerting
-
-### Slack Integration
-
-Get real-time alerts for AWS cost findings, certificate expiry, and PodDisruptionBudget issues.
-
-**Setup Slack Webhook:**
-1. Go to your Slack workspace
-2. Navigate to: Apps → [Incoming Webhooks](https://slack.com/apps/A0F7XDUAZ-incoming-webhooks)
-3. Click "Add to Slack"
-4. Choose a channel and click "Add Incoming Webhooks Integration"
-5. Copy the webhook URL (format: `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX`)
-6. Use the URL with `--slack-webhook` flag
-
-**Color-Coded Alerts:**
-- 🟢 **Green (Good)** - Low severity, healthy status
-- 🟡 **Yellow (Warning)** - Medium severity, at-risk status
-- 🔴 **Red (Danger)** - High severity, critical issues
-
-**AWS Audit Alerts:**
-
-```bash
-# Send alert for any savings amount (threshold = 0)
-dtk aws audit --regions us-east-1 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Only alert if savings exceed $100/month
-dtk aws audit --regions us-east-1,us-west-2 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
-  --alert-threshold 100
-
-# Combine with other flags
-dtk aws audit --regions eu-west-1 \
-  --format json \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
-  --alert-threshold 50 \
-  --no-snapshots
-```
-
-The AWS audit Slack message includes:
-- 📊 Resource counts with emoji icons
-- 💰 Total potential monthly savings
-- 🎨 Color-coded severity (green/yellow/red based on savings)
-- ⏰ Timestamp of the audit
-- 📋 Breakdown by resource type (EBS, EC2, RDS, Snapshots, EIPs)
-
-**Example AWS Audit Slack Message:**
-```
-🔍 AWS DevOps Audit Report
-AWS audit completed for regions: us-east-1, us-west-2
-
-📦 Unattached EBS Volumes: 5 (Est. $45.00/mo)
-💻 Underutilized EC2 Instances: 2 (Est. $100.00/mo)
-🗄️  Underutilized RDS Instances: 1 (Est. $145.00/mo)
-📸 Orphaned Snapshots: 12 (Est. $25.00/mo)
-🌐 Unused Elastic IPs: 3 (Est. $10.80/mo)
-
-💰 Total Potential Savings: $325.80/month
-📅 Timestamp: 2024-11-26 15:30:45 UTC
-📋 Total Resources Found: 23
-```
-
-**Kubernetes Certificate Alerts:**
-
-```bash
-# Alert if any certificates expiring within 30 days
-dtk k8s certs --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Alert for certificates expiring within 14 days in production namespace
-dtk k8s certs --namespace production \
-  --expiry-days 14 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-```
-
-The certificate expiry Slack message includes:
-- 🔐 List of expiring certificates with status
-- 📅 Days remaining for each certificate
-- 🎨 Color-coded severity (red: critical/expired, yellow: expiring soon, green: valid)
-- 📊 Summary counts (total, critical, expiring, expired)
-
-**Example Certificate Expiry Slack Message:**
-```
-🔐 Kubernetes TLS Certificate Expiry Alert
-Found 3 TLS certificate(s) expiring within 30 days
-
-🔴 EXPIRED default/old-cert - -5 days remaining (example.com)
-🟠 CRITICAL production/api-cert - 3 days remaining (api.example.com, www.example.com)
-🟡 EXPIRING SOON staging/web-cert - 25 days remaining (staging.example.com)
-
-📅 Certificates Found: 3
-⚠️ Critical (<7 days): 1
-⏳ Expiring Soon (<30 days): 1
-❌ Expired: 1
-```
-
-
-## Kubernetes Commands
-
-### Health Check
-
-Perform comprehensive health checks on your Kubernetes cluster.
-
-```bash
-# Check all namespaces
-dtk k8s health
-
-# Check specific namespace
-dtk k8s health --namespace production
-
-# Check without node status
-dtk k8s health --nodes=false
-
-# Output as JSON
-dtk k8s health --format json
-```
-
-**Example output:**
-```
-🏥 Checking Kubernetes cluster health...
-
-🔍 Checking pods...
-📦 Checking deployments...
-🖥️  Checking nodes...
-📋 Checking recent events...
-
-🔵 Pods Status
-─────────────────────────────────────────────────────────────
-NAMESPACE   NAME                    READY  STATUS   RESTARTS  AGE
-default     nginx-abc123            1/1    Running  0         2d5h
-default     redis-xyz789            1/1    Running  3         5d12h
-
-📦 Deployments Status
-─────────────────────────────────────────────────────────────
-NAMESPACE   NAME    READY  UP-TO-DATE  AVAILABLE  AGE
-default     nginx   3/3    3           3          15d
-
-✅ No warning events in the last hour
-```
-
-### Certificate Expiry Monitoring
-
-Monitor TLS certificate expiration in your Kubernetes cluster to prevent service disruptions.
-
-```bash
-# Check all namespaces for certificates expiring within 30 days (default)
-dtk k8s certs
-
-# Check specific namespace
-dtk k8s certs --namespace production
-
-# Check for certificates expiring within 60 days
-dtk k8s certs --expiry-days 60
-
-# Check with Slack alerts
-dtk k8s certs --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Combine flags for production monitoring
-dtk k8s certs --namespace production \
-  --expiry-days 14 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-```
-
-**Flags:**
-- `--namespace` / `-n`: Specific namespace to scan (default: all namespaces)
-- `--expiry-days`: Show certificates expiring within N days (default: 30)
-- `--slack-webhook`: Slack webhook URL for certificate expiry alerts
-
-**Color Coding:**
-- 🔴 **Red** - Expired or Critical (<7 days remaining)
-- 🟡 **Yellow** - Expiring Soon (7-30 days remaining)
-- 🟢 **Green** - Valid (>30 days remaining)
-
-**Example output:**
-```
-🔐 Checking TLS certificate expiry in Kubernetes...
-
-Scanning all namespaces for TLS certificates expiring within 30 days...
-
-Found 4 certificate(s) expiring within 30 days (scanned 15 TLS secrets)
-
-SECRET                         NAMESPACE            DAYS REMAINING  DNS NAMES                                EXPIRY DATE          STATUS
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-api-tls-cert                   production           3               api.example.com, www.example.com         2024-11-29 14:30     critical
-ingress-tls                    default              15              *.example.com                            2024-12-11 10:20     expiring-soon
-web-cert                       staging              25              staging.example.com                      2024-12-21 08:15     expiring-soon
-old-cert                       default              -5              old.example.com                          2024-11-21 12:00     expired
-
-🔴 Expired: 1
-🟠 Critical (<7 days): 1
-🟡 Expiring Soon (<30 days): 2
-```
-
-**What it checks:**
-- Scans all `kubernetes.io/tls` type secrets
-- Parses X.509 certificates from `tls.crt` data
-- Extracts certificate metadata: DNS names, common name, expiry date
-- Calculates days remaining until expiration
-- Filters by expiry threshold (default 30 days)
-- Sends Slack alerts if configured and certificates are expiring
-
-**Use cases:**
-- Proactive certificate renewal monitoring
-- Prevent production outages due to expired certificates
-- Compliance auditing for certificate lifecycle management
-- Automated alerting in CI/CD pipelines
-
-### PodDisruptionBudget Monitoring
-
-Check the health status of PodDisruptionBudgets to ensure cluster resilience.
-
-```bash
-# Check all namespaces
-dtk k8s pdb
-
-# Check specific namespace
-dtk k8s pdb --namespace production
-
-# With Slack alerts for issues
-dtk k8s pdb --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-```
-
-**Flags:**
-- `--namespace` / `-n`: Specific namespace to scan (default: all namespaces)
-- `--slack-webhook`: Slack webhook URL for PDB health alerts
-
-**Status Types:**
-- 🟢 **Healthy** - Disruptions allowed > 0, all pods healthy
-- 🟡 **At-Risk** - Zero disruptions allowed OR unhealthy pods
-- 🔴 **Critical** - Zero disruptions allowed AND unhealthy pods
-- ⚪ **No-Pods** - PDB has no matching pods (misconfigured selector)
-
-**Example output:**
-```
-🛡️  Checking PodDisruptionBudget status...
-
-Scanning all namespaces for PodDisruptionBudgets...
-
-🛡️  PodDisruptionBudget Status
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-NAMESPACE            NAME                      MIN AVAIL       CURRENT    ALLOWED    STATUS
-────────────────────┼─────────────────────────┼───────────────┼──────────┼──────────┼────────────────────────────────────
-production           api-pdb                   2               3          1          🟢 healthy
-production           web-pdb                   80%             2          0          🟡 at-risk
-staging              db-pdb                    1               0          0          ⚪ no-pods
-
-Summary:
-✅ Healthy: 1
-⚠️  At-Risk (0 disruptions allowed): 1
-❌ No Matching Pods: 1
-```
-
-**What it checks:**
-- Scans all PodDisruptionBudgets across namespaces
-- Identifies PDBs with zero disruptions allowed (prevents safe evictions)
-- Detects misconfigured PDBs with no matching pods
-- Finds PDBs with unhealthy pods
-- Sends Slack alerts for at-risk or critical PDBs
-
-**Use cases:**
-- Ensure safe cluster maintenance and node draining
-- Prevent deployment issues due to restrictive PDBs
-- Detect misconfigured disruption budgets
-- Monitor application availability guarantees
-
-## Cost Reporting
-
-```bash
-# Last 7 days cost report
-dtk cost report
-
-# Last 30 days by service
-dtk cost report --days 30 --group-by SERVICE
-
-# Last 90 days by region
-dtk cost report --days 90 --group-by REGION
-
-# Show top 5 spending items
-dtk cost report --top 5
-
-# Output as JSON
-dtk cost report --format json
-```
-
-Example output:
-```
-💰 Generating cost report for last 7 days...
-
-📅 Period: 2024-11-07 to 2024-11-14
-🏷️  Grouping: SERVICE
-
-📊 Cost Report (2024-11-07 to 2024-11-14)
-─────────────────────────────────────────────────────────────
-Total Cost: $2,847.32 USD
-
-💵 Cost Breakdown by SERVICE
-─────────────────────────────────────────────────────────────
-SERVICE                          COST        % OF TOTAL
-Amazon Elastic Compute Cloud     $1,234.56   43.4%
-Amazon Relational Database       $876.54     30.8%
-Amazon Simple Storage Service    $345.67     12.1%
-Amazon CloudWatch               $123.45     4.3%
-Other                           $267.10     9.4%
-```
-
-## Configuration
-
-### AWS Configuration
-
-Ensure AWS credentials are configured:
-
-```bash
-# Using AWS CLI
-aws configure
-
-# Or set environment variables
-export AWS_ACCESS_KEY_ID="your-access-key"
-export AWS_SECRET_ACCESS_KEY="your-secret-key"
-export AWS_REGION="us-east-1"
-```
-
-### Kubernetes Configuration
-
-Ensure kubectl is configured:
-
-```bash
-# Verify connection
-kubectl cluster-info
-
-# Set default namespace (optional)
-kubectl config set-context --current --namespace=production
-```
-
-## Common Usage Examples
-
-Here are some real-world usage examples combining different features:
-
-### AWS Audit with Slack Alerts
-
-```bash
-# Basic audit with Slack notifications
-dtk aws audit --regions eu-north-1 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Multi-region audit with alert threshold
-dtk aws audit --regions us-east-1,us-west-2,eu-west-1 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
-  --alert-threshold 100
-
-# Targeted audit - only EBS and EC2 with JSON output
-dtk aws audit --regions us-east-1 \
-  --ebs --ec2 \
-  --no-snapshots --no-eips --no-rds \
-  --format json \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-```
-
-### Kubernetes Certificate Monitoring
-
-```bash
-# Check all certificates expiring within 30 days
-dtk k8s certs --expiry-days 30
-
-# Production namespace with 14-day warning
-dtk k8s certs --namespace production --expiry-days 14
-
-# Production monitoring with Slack alerts
-dtk k8s certs --namespace production \
-  --expiry-days 14 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Critical alerts - only show certificates expiring within 7 days
-dtk k8s certs --expiry-days 7 \
-  --slack-webhook https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-```
-
-### Scheduled Monitoring (Cron Jobs)
-
-Set up automated monitoring with cron:
-
-```bash
-# Add to crontab (crontab -e)
-
-# Daily AWS audit at 9 AM with Slack alerts
-0 9 * * * /usr/local/bin/dtk aws audit --regions us-east-1 --slack-webhook https://hooks.slack.com/xxx --alert-threshold 50
-
-# Weekly certificate check on Mondays at 8 AM
-0 8 * * 1 /usr/local/bin/dtk k8s certs --expiry-days 30 --slack-webhook https://hooks.slack.com/xxx
-
-# Hourly critical certificate check for production
-0 * * * * /usr/local/bin/dtk k8s certs --namespace production --expiry-days 7 --slack-webhook https://hooks.slack.com/xxx
-```
-
-### CI/CD Pipeline Integration
-
-```yaml
-# Example GitHub Actions workflow
-name: Infrastructure Audit
-on:
-  schedule:
-    - cron: '0 9 * * *'  # Daily at 9 AM
-  workflow_dispatch:
-
-jobs:
-  aws-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run AWS Audit
-        run: |
-          dtk aws audit \
-            --regions us-east-1,eu-west-1 \
-            --slack-webhook ${{ secrets.SLACK_WEBHOOK }} \
-            --alert-threshold 100
-
-  k8s-cert-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Certificate Expiry
-        run: |
-          dtk k8s certs \
-            --expiry-days 30 \
-            --slack-webhook ${{ secrets.SLACK_WEBHOOK }}
-```
-
-### Combined Monitoring Script
-
-```bash
-#!/bin/bash
-# daily-audit.sh - Comprehensive infrastructure monitoring
-
-SLACK_WEBHOOK="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-
-echo "Running AWS Audit..."
-dtk aws audit \
-  --regions us-east-1,us-west-2 \
-  --slack-webhook "$SLACK_WEBHOOK" \
-  --alert-threshold 50
-
-echo "Checking Kubernetes certificates..."
-dtk k8s certs \
-  --expiry-days 30 \
-  --slack-webhook "$SLACK_WEBHOOK"
-
-echo "Checking Kubernetes health..."
-dtk k8s health --all-namespaces
-
-echo "Audit complete!"
-```
-
-## Development
-
-### Project Structure
-
-```
-devops-toolkit/
-├── cmd/                    # CLI commands
-│   ├── root.go            # Root command
-│   ├── aws.go             # AWS audit command
-│   ├── k8s.go             # Kubernetes health command
-│   └── cost.go            # Cost reporting command
-├── pkg/                    # Core packages
-│   ├── aws/               # AWS SDK operations
-│   │   ├── auditor.go     # Resource auditing
-│   │   ├── rds.go         # RDS auditing
-│   │   └── cost.go        # Cost analysis
-│   ├── k8s/               # Kubernetes operations
-│   │   └── health.go      # Health checking
-│   ├── notify/            # Notification integrations
-│   │   └── slack.go       # Slack webhook alerts
-│   └── reporter/          # Output formatting
-│       └── reporter.go    # Table/JSON/CSV rendering
-├── main.go                # Entry point
-├── go.mod                 # Go modules
-├── Makefile              # Build automation
-└── README.md             # This file
-```
-
-### Build Commands
-
-```bash
-# Install dependencies
-make deps
-
-# Build binary
-make build
-
-# Run tests
-make test
-
-# Run linter
-make lint
-
-# Clean build artifacts
-make clean
-
-# Install to $GOPATH/bin
-make install
-```
-
-### Adding New Features
-
-1. Add command in `cmd/` directory
-2. Implement logic in `pkg/` directory
-3. Register command in `cmd/root.go`
-4. Add tests
-5. Update README
-
-## Requirements
-
-### System Requirements
-- **Go 1.21+** - Modern Go version with generics support
-- **AWS credentials** - Configured via `~/.aws/credentials` or environment variables
-- **kubectl** - Configured for Kubernetes operations (for k8s commands)
-
-### Built With
-
-**Core Technologies:**
-- **Go 1.21+** - Primary programming language
-- **Cobra** (`github.com/spf13/cobra`) - CLI framework and command structure
-- **AWS SDK for Go v2** (`github.com/aws/aws-sdk-go-v2`) - AWS service integrations
-- **Kubernetes client-go** (`k8s.io/client-go`) - Kubernetes API interactions
-
-**AWS SDKs:**
-- `aws-sdk-go-v2/service/ec2` - EC2 and EBS operations
-- `aws-sdk-go-v2/service/rds` - RDS database monitoring
-- `aws-sdk-go-v2/service/cloudwatch` - Metrics and monitoring
-- `aws-sdk-go-v2/service/costexplorer` - Cost analysis and reporting
-
-**Kubernetes SDKs:**
-- `k8s.io/api/core/v1` - Core Kubernetes resources
-- `k8s.io/api/apps/v1` - Deployments and workloads
-- `k8s.io/api/policy/v1` - PodDisruptionBudgets
-
-**Utilities:**
-- `github.com/olekukonko/tablewriter` - Formatted table output
-- Standard library `crypto/x509` - Certificate parsing
-- Standard library `net/http` - Webhook integrations
-
-### AWS Permissions
-
-Required IAM permissions for full functionality:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeInstances",
-        "ec2:DescribeVolumes",
-        "ec2:DescribeSnapshots",
-        "ec2:DescribeAddresses",
-        "ec2:DescribeSecurityGroups",
-        "s3:ListAllMyBuckets",
-        "s3:GetBucketLocation",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:GetBucketAcl",
-        "cloudwatch:GetMetricStatistics",
-        "ce:GetCostAndUsage"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-### Kubernetes Permissions
-
-Required RBAC permissions:
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: devops-toolkit-reader
-rules:
-- apiGroups: [""]
-  resources: ["pods", "nodes", "events"]
-  verbs: ["get", "list"]
-- apiGroups: ["apps"]
-  resources: ["deployments", "statefulsets"]
-  verbs: ["get", "list"]
-```
-
-## Roadmap
-
-### Completed Features
-- [x] Slack notifications for cost alerts
-
-### Planned Features
-- [ ] Multi-cloud support (Azure, GCP)
-- [ ] Microsoft Teams notifications
-- [ ] Prometheus metrics export
-- [ ] Historical trend analysis
-- [ ] Automated remediation suggestions
-- [ ] CI/CD pipeline integration
-- [ ] Docker image distribution
-
-## Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Author
-
-**Ahmed Fawzy Meselhy**
-- Email: ahmed.fawzy21@gmail.com
-- GitHub: [@ahmedfawzy](https://github.com/ahmedfawzy)
-- Role: Senior DevOps/SRE Engineer
-
-## Acknowledgments
-
-Built as part of a DevOps learning journey, focusing on:
-- Go programming language proficiency
-- Cloud cost optimization (FinOps)
-- Kubernetes operations at scale
-- Infrastructure automation
+Add `--format json` for machine-readable output, or `--slack-webhook <url> --alert-threshold 100`
+to post the summary to Slack only when savings clear a threshold.
 
 ---
 
-**Note**: This tool is designed for DevOps engineers who need quick insights into their AWS and Kubernetes infrastructure. Always review recommendations before taking action on production systems.
+## Feature matrix
+
+Every subcommand below is implemented today. All are read-only.
+
+### 💸 AWS Cost & Waste Audit — `dtk aws …`
+
+| Command | What it checks | Example finding |
+|---|---|---|
+| `dtk aws audit` | Unattached EBS volumes, <5% CPU EC2, orphaned snapshots, unused Elastic IPs, <10% CPU RDS (opt-in: log groups, DynamoDB) | `vol-0abc… unattached — $8.00/mo` |
+| `dtk aws security` | Public S3 buckets (ACL / disabled block-public-access), security groups exposing risky ports (22, 3389, 3306, 5432, 27017) to `0.0.0.0/0` | `sg-0f12… port 22 open to 0.0.0.0/0 — CRITICAL` |
+
+### 📊 Cost Intelligence — `dtk cost …`
+
+| Command | What it checks | Example finding |
+|---|---|---|
+| `dtk cost report` | Cost Explorer spend by `SERVICE` / `REGION` / `INSTANCE_TYPE` with daily trend and top-N | `Amazon EC2 — $1,234.56 (43.4%)` |
+| `dtk cost loggroups` | CloudWatch log groups with no retention policy or no ingestion in 30 days | `/aws/lambda/old-fn — no retention, $3.20/mo` |
+| `dtk cost dynamodb` | Tables without Point-in-Time Recovery; overprovisioned provisioned-capacity tables (<20% used) | `orders — provisioned 100 RCU, using 4 — $47/mo waste` |
+| `dtk cost savings` | Reserved Instance & Compute Savings Plan purchase recommendations (1yr, No Upfront) | `m5.large ×3 — est. $210/mo savings` |
+
+### ☸️ EKS Layer — `dtk eks …`
+
+| Command | What it checks | Example finding |
+|---|---|---|
+| `dtk eks nodes` | Underutilized worker nodes (7-day avg CPU **and** memory < 30%) via Container Insights, with a rightsizing suggestion | `ip-10-0-1-5 — 12% CPU / 18% mem — downsize m5.xlarge → m5.large` |
+| `dtk eks pods` | Containers missing CPU/memory requests or limits, with the practical risk | `web/api — no memory limit: at risk of OOMKill` |
+| `dtk eks namespaces` | Cluster node cost allocated per namespace by reserved-capacity share | `payments — $312/mo (34% of cluster)` |
+| `dtk eks nodegroups` | Spot vs On-Demand mix per node group, with a rebalance savings estimate | `default — 100% On-Demand — est. $180/mo if rebalanced` |
+| `dtk eks audit` | Combined EKS audit (pods + node groups always; nodes + namespaces opt-in) with rolled-up savings | `Total potential savings: $360/mo` |
+
+### 🔐 Security Scanner — `dtk security …`
+
+| Command | What it checks | Example finding |
+|---|---|---|
+| `dtk security imds` | EC2 instances still allowing IMDSv1 (`HttpTokens != required`) — the SSRF credential-theft vector | `i-0aa11… IMDSv1 allowed — enforce IMDSv2` |
+| `dtk security lambda` | Deprecated/EOL runtimes, Function URLs with `AuthType NONE`, over-provisioned memory | `checkout — runtime python3.7 deprecated` |
+| `dtk security iam` | Console users without MFA, active access keys > 90 days, admin-equivalent (esp. unused) roles | `deploy-user — password set, MFA inactive` |
+| `dtk security secrets` | Plaintext secrets in SSM `String` params and Lambda env var **keys** (names only, never values) | `/prod/DB_PASSWORD — plaintext SSM String` |
+| `dtk security eks` | Clusters with a fully-public API endpoint (`0.0.0.0/0`), pods running/allowed as root, clusters below min supported version | `prod-cluster — API endpoint open to 0.0.0.0/0` |
+| `dtk security rds` | Unencrypted storage, public access, no backups/deletion protection, EOL engines, insecure params, single-AZ prod, default usernames, public snapshots (MySQL + PostgreSQL) — **exits non-zero on any critical finding** | `orders-db — storage not encrypted at rest — CRITICAL` |
+| `dtk security audit` | Runs every security check above and prints a combined report (a failing domain warns and continues) | combined IMDS + Lambda + IAM + Secrets + EKS + RDS report |
+
+### 🏥 Kubernetes Health — `dtk k8s …`
+
+| Command | What it checks | Example finding |
+|---|---|---|
+| `dtk k8s health` | Pod status, deployment readiness, node status/capacity, warning events (last hour) | `payments/api-7f… CrashLoopBackOff, 14 restarts` |
+| `dtk k8s certs` | `kubernetes.io/tls` secrets, certificate expiry, colour-coded by urgency | `ingress-tls — expires in 5 days 🔴` |
+| `dtk k8s pdb` | PodDisruptionBudgets: zero disruptions allowed, no matching pods, unhealthy pods | `web-pdb — 0 disruptions allowed — at-risk` |
+
+---
+
+## What makes this different
+
+- **EKS-layer cost intelligence, not just account-level.** Most cost scanners stop at
+  EC2/EBS/RDS. `dtk` goes a layer deeper: it rightsizes worker nodes from Container
+  Insights utilization, flags pods with no resource limits before they cause an outage,
+  attributes cluster spend per namespace, and reports each node group's Spot/On-Demand
+  balance with a rebalance savings estimate.
+- **Security scanning that goes well beyond cost.** IMDSv2 enforcement, IAM credential
+  analysis (MFA, key age, admin roles derived from the actual policy documents),
+  plaintext-secret discovery, and full RDS posture checks for **both MySQL and
+  PostgreSQL** — not just the "idle resource" checks a cost tool gives you.
+- **Read-only by design.** This tool never modifies or deletes anything. Every check is a
+  `Describe` / `List` / `Get` API call (the sole exception is IAM
+  `GenerateCredentialReport`, which produces a read-only credential report and changes no
+  resource). There is no code path in this repository that creates, updates, deletes, or
+  terminates a cloud resource — verified across `pkg/aws/` and `pkg/eks/`. You can run it
+  against production without a change-management ticket.
+- **One binary, one mental model.** AWS, EKS, and Kubernetes checks share the same
+  finding/report pipeline, the same `--format table|json` output, and the same optional
+  Slack alerting — so wiring any check into CI is identical.
+
+---
+
+## Requirements
+
+- **Go 1.24+** — only to build from source or `go install`; Homebrew/release binaries are self-contained.
+- **AWS credentials** for the `aws`, `cost`, `eks`, and `security` commands, resolved via
+  the standard AWS chain (environment variables, `~/.aws/credentials`, or an instance/IRSA
+  role). Region resolves from `--region`/`--regions`, then `$AWS_REGION`, then `us-east-1`.
+  - The tool needs only read-only IAM permissions (`Describe*` / `List*` / `Get*` on the
+    relevant services, plus `iam:GenerateCredentialReport`). A sample read-only IAM policy
+    may be added to this repo in a later phase.
+- **kubeconfig** for the `k8s` commands and the Kubernetes-facing `eks` checks (`eks pods`,
+  and the pod checks within `eks audit` / `security eks`). The tool reads `~/.kube/config`
+  and uses the current context.
+- **CloudWatch Container Insights** enabled on the cluster for `eks nodes` and
+  `eks namespaces` (the tool prints exact enablement steps if it's missing).
+
+---
+
+## Contributing
+
+Contributions are welcome. This is a standard Go project — please:
+
+- Follow standard Go conventions (`gofmt`, `go vet`).
+- Keep the read-only guarantee intact: no `Create` / `Delete` / `Modify` / `Put` API calls.
+- Include tests. The suite must pass before a PR is merged:
+
+  ```bash
+  go test ./...
+  ```
+
+- Prefer small, pure, testable rule functions (see the existing `*_test.go` files for the pattern).
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Ahmed Fawzy.

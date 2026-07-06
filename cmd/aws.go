@@ -13,15 +13,17 @@ import (
 )
 
 var (
-	awsRegions     string
-	outputFormat   string
-	includeEC2     bool
-	includeEBS     bool
-	includeSnaps   bool
-	includeEIPs    bool
-	includeRDS     bool
-	slackWebhook   string
-	alertThreshold float64
+	awsRegions       string
+	outputFormat     string
+	includeEC2       bool
+	includeEBS       bool
+	includeSnaps     bool
+	includeEIPs      bool
+	includeRDS       bool
+	includeLogGroups bool
+	includeDynamoDB  bool
+	slackWebhook     string
+	alertThreshold   float64
 
 	// Security command flags
 	securityRegion       string
@@ -43,6 +45,10 @@ var awsAuditCmd = &cobra.Command{
 - Underutilized EC2 instances (< 5% CPU)
 - Orphaned EBS snapshots
 - Unused Elastic IPs
+
+Opt-in checks (disabled by default, add extra CloudWatch API calls):
+- CloudWatch log groups (no retention / dead) via --loggroups
+- DynamoDB tables (no PITR / overprovisioned) via --dynamodb
 
 Example:
   dtk aws audit --regions us-east-1
@@ -77,6 +83,8 @@ func init() {
 	awsAuditCmd.Flags().BoolVar(&includeSnaps, "snapshots", true, "Include snapshot analysis")
 	awsAuditCmd.Flags().BoolVar(&includeEIPs, "eips", true, "Include Elastic IP analysis")
 	awsAuditCmd.Flags().BoolVar(&includeRDS, "rds", true, "Include RDS instance analysis")
+	awsAuditCmd.Flags().BoolVar(&includeLogGroups, "loggroups", false, "Include CloudWatch log group analysis (opt-in; adds CloudWatch API calls)")
+	awsAuditCmd.Flags().BoolVar(&includeDynamoDB, "dynamodb", false, "Include DynamoDB table analysis (opt-in; adds CloudWatch API calls)")
 	awsAuditCmd.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Slack webhook URL for sending alerts")
 	awsAuditCmd.Flags().Float64Var(&alertThreshold, "alert-threshold", 0, "Minimum savings threshold to trigger Slack alert (default 0)")
 
@@ -169,6 +177,45 @@ func runAWSAudit(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to audit RDS instances in %s: %w", region, err)
 			}
 			allResults.UnderutilizedRDSInstances = append(allResults.UnderutilizedRDSInstances, rdsInstances...)
+		}
+
+		// Audit CloudWatch log groups
+		if includeLogGroups {
+			fmt.Println("📋 Checking CloudWatch log groups...")
+			cwAuditor, err := aws.NewCloudWatchAuditor(ctx, region)
+			if err != nil {
+				return fmt.Errorf("failed to create CloudWatch auditor for region %s: %w", region, err)
+			}
+
+			withoutRetention, err := cwAuditor.FindLogGroupsWithoutRetention(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to audit log groups in %s: %w", region, err)
+			}
+			dead, err := cwAuditor.FindDeadLogGroups(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to audit dead log groups in %s: %w", region, err)
+			}
+			allResults.LogGroupFindings = append(allResults.LogGroupFindings, mergeLogGroupFindings(withoutRetention, dead)...)
+		}
+
+		// Audit DynamoDB tables
+		if includeDynamoDB {
+			fmt.Println("🗂️  Checking DynamoDB tables...")
+			ddbAuditor, err := aws.NewDynamoDBAuditor(ctx, region)
+			if err != nil {
+				return fmt.Errorf("failed to create DynamoDB auditor for region %s: %w", region, err)
+			}
+
+			withoutPITR, err := ddbAuditor.FindTablesWithoutPITR(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to audit DynamoDB PITR in %s: %w", region, err)
+			}
+			overprovisioned, err := ddbAuditor.FindOverprovisionedTables(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to audit overprovisioned DynamoDB tables in %s: %w", region, err)
+			}
+			allResults.DynamoDBFindings = append(allResults.DynamoDBFindings, withoutPITR...)
+			allResults.DynamoDBFindings = append(allResults.DynamoDBFindings, overprovisioned...)
 		}
 	}
 
@@ -314,6 +361,29 @@ func runAWSSecurity(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// mergeLogGroupFindings combines the "without retention" and "dead" finding
+// sets, keeping each log group only once so its cost isn't counted twice in the
+// combined savings rollup.
+func mergeLogGroupFindings(withoutRetention, dead []aws.LogGroupFinding) []aws.LogGroupFinding {
+	byName := make(map[string]aws.LogGroupFinding, len(withoutRetention)+len(dead))
+	order := make([]string, 0, len(withoutRetention)+len(dead))
+
+	for _, sets := range [][]aws.LogGroupFinding{withoutRetention, dead} {
+		for _, lg := range sets {
+			if _, exists := byName[lg.Name]; !exists {
+				order = append(order, lg.Name)
+			}
+			byName[lg.Name] = lg
+		}
+	}
+
+	merged := make([]aws.LogGroupFinding, 0, len(order))
+	for _, name := range order {
+		merged = append(merged, byName[name])
+	}
+	return merged
 }
 
 func severityLabel(severity aws.Severity) string {

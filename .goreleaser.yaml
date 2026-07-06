@@ -1,0 +1,106 @@
+# GoReleaser configuration for dtk (DevOps Toolkit)
+# Docs: https://goreleaser.com
+version: 2
+
+project_name: devops-toolkit
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dtk
+    binary: dtk
+    # main.go lives at the repository root.
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # windows/arm64 is not a meaningful target for this CLI.
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      # Inject version info. The version variables live in the cmd package;
+      # the import path is the module path declared in go.mod.
+      - -X github.com/ahmedfawzy/devops-toolkit/cmd.Version={{ .Version }}
+      - -X github.com/ahmedfawzy/devops-toolkit/cmd.BuildDate={{ .Date }}
+
+archives:
+  - id: dtk
+    ids:
+      - dtk
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    # tar.gz for linux/darwin, zip for windows.
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  github:
+    owner: ahmedfawzy21
+    name: devops-toolkit
+  draft: false
+
+# Homebrew tap. On each release GoReleaser regenerates and pushes the cask to
+# the separate ahmedfawzy21/homebrew-tap repository, so users can:
+#   brew install ahmedfawzy21/tap/devops-toolkit
+#
+# NOTE: GoReleaser deprecated `brews` (binary formulae) in favor of
+# `homebrew_casks`. Homebrew casks are macOS-only, so Linux users should install
+# via `go install` or the release binaries rather than the tap.
+homebrew_casks:
+  - name: devops-toolkit
+    # The built binary is named dtk (not devops-toolkit).
+    binaries:
+      - dtk
+    ids:
+      - dtk
+    repository:
+      owner: ahmedfawzy21
+      name: homebrew-tap
+      # Pushing to a SEPARATE repo needs a token with write access to it; the
+      # default GITHUB_TOKEN only covers this repo. Set HOMEBREW_TAP_TOKEN as a
+      # repo secret (see setup notes).
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: ahmedfawzy21
+      email: ahmed.fawzy21@gmail.com
+    homepage: "https://github.com/ahmedfawzy21/devops-toolkit"
+    description: "Read-only AWS + Kubernetes cost and security auditor"
+    license: "MIT"
+    # Strip the macOS Gatekeeper quarantine flag from the unsigned binary so it
+    # runs without a security prompt after `brew install`.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dtk"]
+          end

@@ -100,7 +100,7 @@ func init() {
 func runK8sHealth(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	fmt.Println("🏥 Checking Kubernetes cluster health...\n")
+	fmt.Print("🏥 Checking Kubernetes cluster health...\n\n")
 
 	checker, err := k8s.NewHealthChecker()
 	if err != nil {
@@ -162,7 +162,7 @@ func runK8sHealth(cmd *cobra.Command, args []string) error {
 func runK8sCerts(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	fmt.Println("🔐 Checking TLS certificate expiry in Kubernetes...\n")
+	fmt.Print("🔐 Checking TLS certificate expiry in Kubernetes...\n\n")
 
 	checker, err := k8s.NewHealthChecker()
 	if err != nil {
@@ -353,7 +353,7 @@ func formatCertFindings(results *k8s.CertificateResults) string {
 func runK8sPDB(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	fmt.Println("🛡️  Checking PodDisruptionBudget status...\n")
+	fmt.Print("🛡️  Checking PodDisruptionBudget status...\n\n")
 
 	checker, err := k8s.NewHealthChecker()
 	if err != nil {
@@ -363,7 +363,7 @@ func runK8sPDB(cmd *cobra.Command, args []string) error {
 	// Determine namespace
 	ns := namespace
 	if ns == "" {
-		fmt.Println("Scanning all namespaces for PodDisruptionBudgets...\n")
+		fmt.Print("Scanning all namespaces for PodDisruptionBudgets...\n\n")
 	} else {
 		fmt.Printf("Scanning namespace '%s' for PodDisruptionBudgets...\n\n", ns)
 	}
